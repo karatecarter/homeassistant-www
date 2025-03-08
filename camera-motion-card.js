@@ -119,18 +119,40 @@ class CameraMotionCard extends HTMLElement {
         this.querySelector(".card-content").appendChild(buttons);
     }
 
+    translateToDisplayCoords(x, y) {
+        const scaleX = this.canvas.width / 640;
+        const scaleY = this.canvas.height / 480;
+        return {
+            x: Math.round(x * scaleX),
+            y: Math.round(y * scaleY)
+        };
+    }
+
+    translateToCameraCoords(x, y) {
+        const scaleX = 640 / this.canvas.width;
+        const scaleY = 480 / this.canvas.height;
+        return {
+            x: Math.round(x * scaleX),
+            y: Math.round(y * scaleY)
+        };
+    }
+
     drawAllWindows() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         for (let i = 1; i <= 4; i++) {
             if (this.windows[i]) {
                 const coords = this.windows[i];
+                // Translate camera coordinates to display coordinates
+                const start = this.translateToDisplayCoords(coords.x, coords.y);
+                const end = this.translateToDisplayCoords(coords.x2, coords.y2);
+
                 this.ctx.strokeStyle = this.windowColors[i];
                 this.ctx.lineWidth = 2;
                 this.ctx.strokeRect(
-                    coords.x,
-                    coords.y,
-                    coords.x2 - coords.x,
-                    coords.y2 - coords.y
+                    start.x,
+                    start.y,
+                    end.x - start.x,
+                    end.y - start.y
                 );
             }
         }
@@ -167,12 +189,25 @@ class CameraMotionCard extends HTMLElement {
         this.isDrawing = false;
 
         if (this._hass && this.currentWindow > 0) {
+            // Translate display coordinates to camera coordinates
+            const start = this.translateToCameraCoords(this.startX, this.startY);
+            const end = this.translateToCameraCoords(this.currentX, this.currentY);
+
+            // Ensure coordinates are within bounds (0-639, 0-479)
             const coords = {
-                x: Math.round(this.startX),
-                y: Math.round(this.startY),
-                x2: Math.round(this.currentX),
-                y2: Math.round(this.currentY)
+                x: Math.max(0, Math.min(639, start.x)),
+                y: Math.max(0, Math.min(479, start.y)),
+                x2: Math.max(0, Math.min(639, end.x)),
+                y2: Math.max(0, Math.min(479, end.y))
             };
+
+            // Ensure x2 > x and y2 > y
+            if (coords.x2 < coords.x) {
+                [coords.x, coords.x2] = [coords.x2, coords.x];
+            }
+            if (coords.y2 < coords.y) {
+                [coords.y, coords.y2] = [coords.y2, coords.y];
+            }
 
             this.windows[this.currentWindow] = coords;
 
