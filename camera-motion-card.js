@@ -72,13 +72,31 @@ class CameraMotionCard extends HTMLElement {
                 this.img.alt = "Camera image failed to load";
             };
 
-            // Load window coordinates from state attributes if available
+            // Load window data from state attributes
             for (let i = 1; i <= 4; i++) {
-                if (state.attributes[`window_${i}_coordinates`]) {
-                    const coords = state.attributes[`window_${i}_coordinates`];
-                    this.windows[i] = coords;
+                const windowData = state.attributes[`window_${i}`];
+                if (windowData) {
+                    this.windows[i] = windowData;
                 }
             }
+
+            // Update button labels and styles if they exist
+            const buttons = this.querySelectorAll(".window-buttons button");
+            buttons.forEach((btn, index) => {
+                const windowNum = index + 1;
+                const windowData = this.windows[windowNum];
+                if (windowData) {
+                    btn.innerText = windowData.name || `Window ${windowNum}`;
+                    // Update button style based on window state
+                    if (windowData.is_on) {
+                        btn.style.opacity = "1";
+                    } else {
+                        btn.style.opacity = "0.3";
+                    }
+                }
+            });
+
+            this.drawAllWindows();
         }
     }
 
@@ -102,21 +120,164 @@ class CameraMotionCard extends HTMLElement {
 
         for (let i = 1; i <= 4; i++) {
             const btn = document.createElement("button");
-            btn.innerText = `Window ${i}`;
+            const windowData = this.windows[i];
+            btn.innerText = windowData?.name || `Window ${i}`;
             btn.style.padding = "8px";
             btn.style.cursor = "pointer";
             btn.style.backgroundColor = this.windowColors[i];
             btn.style.color = "white";
-            btn.style.border = "2px solid transparent"; // Add transparent border by default
+            btn.style.border = "2px solid transparent";
             btn.style.borderRadius = "4px";
             btn.style.transition = "all 0.2s ease";
             btn.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.2)";
-            btn.style.height = "36px"; // Fix the height
-            btn.style.lineHeight = "16px"; // Ensure text is vertically centered
+            btn.style.height = "36px";
+            btn.style.lineHeight = "16px";
+            btn.style.opacity = windowData?.is_on ? "1" : "0.3";
             btn.onclick = () => this.selectWindow(i);
             buttons.appendChild(btn);
         }
         this.querySelector(".card-content").appendChild(buttons);
+
+        // Add settings panel
+        const settingsPanel = document.createElement("div");
+        settingsPanel.className = "window-settings";
+        settingsPanel.style.marginTop = "16px";
+        settingsPanel.style.display = "none"; // Hide initially
+        settingsPanel.style.gap = "8px";
+        settingsPanel.style.padding = "12px";
+        settingsPanel.style.backgroundColor = "rgba(var(--rgb-primary-text-color), 0.06)";
+        settingsPanel.style.borderRadius = "4px";
+
+        // Create enable/disable checkbox
+        const enableContainer = document.createElement("div");
+        enableContainer.style.display = "flex";
+        enableContainer.style.alignItems = "center";
+        enableContainer.style.marginBottom = "12px";
+
+        const enableCheckbox = document.createElement("ha-switch");
+        enableCheckbox.style.marginRight = "8px";
+
+        const enableLabel = document.createElement("span");
+        enableLabel.textContent = "Enable Window";
+
+        enableContainer.appendChild(enableCheckbox);
+        enableContainer.appendChild(enableLabel);
+
+        // Create settings inputs
+        const nameInput = document.createElement("ha-textfield");
+        nameInput.label = "Window Name";
+        nameInput.style.marginBottom = "8px";
+        nameInput.style.width = "100%";
+        nameInput.value = `Window ${this.currentWindow || 1}`;
+
+        const sensitivitySlider = document.createElement("ha-slider");
+        sensitivitySlider.min = 0;
+        sensitivitySlider.max = 100;
+        sensitivitySlider.pin = true;
+        sensitivitySlider.style.marginBottom = "8px";
+
+        const sensitivityLabel = document.createElement("div");
+        sensitivityLabel.textContent = "Sensitivity: 0";
+        sensitivityLabel.style.marginBottom = "4px";
+
+        const thresholdSlider = document.createElement("ha-slider");
+        thresholdSlider.min = 0;
+        thresholdSlider.max = 255;
+        thresholdSlider.pin = true;
+        thresholdSlider.style.marginBottom = "8px";
+
+        const thresholdLabel = document.createElement("div");
+        thresholdLabel.textContent = "Threshold: 0";
+        thresholdLabel.style.marginBottom = "4px";
+
+        // Add event listeners for settings changes
+        enableCheckbox.addEventListener("change", (e) => {
+            if (this.currentWindow && this._hass) {
+                const isEnabled = e.target.checked;
+                this._hass.callService("icamera", "set_window_enabled", {
+                    entity_id: this.config.entity,
+                    window_num: this.currentWindow,
+                    enabled: isEnabled
+                });
+                // Update local state
+                if (!this.windows[this.currentWindow]) {
+                    this.windows[this.currentWindow] = {};
+                }
+                this.windows[this.currentWindow].is_on = isEnabled;
+                // Update button appearance
+                const btn = this.querySelector(`.window-buttons button:nth-child(${this.currentWindow})`);
+                if (btn) {
+                    btn.style.opacity = isEnabled ? "1" : "0.4";
+                }
+            }
+        });
+
+        nameInput.addEventListener("change", (e) => {
+            if (this.currentWindow && this._hass) {
+                this._hass.callService("icamera", "set_window_name", {
+                    entity_id: this.config.entity,
+                    window_num: this.currentWindow,
+                    name: e.target.value
+                });
+                // Update button text
+                const btn = this.querySelector(`.window-buttons button:nth-child(${this.currentWindow})`);
+                if (btn) btn.innerText = e.target.value || `Window ${this.currentWindow}`;
+                // Update local state
+                if (!this.windows[this.currentWindow]) {
+                    this.windows[this.currentWindow] = {};
+                }
+                this.windows[this.currentWindow].name = e.target.value;
+            }
+        });
+
+        sensitivitySlider.addEventListener("change", (e) => {
+            if (this.currentWindow && this._hass) {
+                const value = parseInt(e.target.value);
+                sensitivityLabel.textContent = `Sensitivity: ${value}`;
+                this._hass.callService("icamera", "set_window_sensitivity", {
+                    entity_id: this.config.entity,
+                    window_num: this.currentWindow,
+                    sensitivity: value
+                });
+                // Update local state
+                if (!this.windows[this.currentWindow]) {
+                    this.windows[this.currentWindow] = {};
+                }
+                this.windows[this.currentWindow].sensitivity = value;
+            }
+        });
+
+        thresholdSlider.addEventListener("change", (e) => {
+            if (this.currentWindow && this._hass) {
+                const value = parseInt(e.target.value);
+                thresholdLabel.textContent = `Threshold: ${value}`;
+                this._hass.callService("icamera", "set_window_threshold", {
+                    entity_id: this.config.entity,
+                    window_num: this.currentWindow,
+                    threshold: value
+                });
+                // Update local state
+                if (!this.windows[this.currentWindow]) {
+                    this.windows[this.currentWindow] = {};
+                }
+                this.windows[this.currentWindow].threshold = value;
+            }
+        });
+
+        // Add elements to settings panel
+        settingsPanel.appendChild(enableContainer);
+        settingsPanel.appendChild(nameInput);
+        settingsPanel.appendChild(sensitivityLabel);
+        settingsPanel.appendChild(sensitivitySlider);
+        settingsPanel.appendChild(thresholdLabel);
+        settingsPanel.appendChild(thresholdSlider);
+
+        this.querySelector(".card-content").appendChild(settingsPanel);
+        this.settingsPanel = settingsPanel;
+        this.enableCheckbox = enableCheckbox;
+        this.nameInput = nameInput;
+        this.sensitivitySlider = sensitivitySlider;
+        this.thresholdSlider = thresholdSlider;
     }
 
     translateToDisplayCoords(x, y) {
@@ -140,20 +301,23 @@ class CameraMotionCard extends HTMLElement {
     drawAllWindows() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         for (let i = 1; i <= 4; i++) {
-            if (this.windows[i]) {
-                const coords = this.windows[i];
+            const windowData = this.windows[i];
+            if (windowData && windowData.coordinates) {
+                const coords = windowData.coordinates;
                 // Translate camera coordinates to display coordinates
                 const start = this.translateToDisplayCoords(coords.x, coords.y);
                 const end = this.translateToDisplayCoords(coords.x2, coords.y2);
 
                 this.ctx.strokeStyle = this.windowColors[i];
-                this.ctx.lineWidth = 2;
+                this.ctx.lineWidth = windowData.is_on ? 2 : 1;
+                this.ctx.globalAlpha = windowData.is_on ? 1 : 0.5;
                 this.ctx.strokeRect(
                     start.x,
                     start.y,
                     end.x - start.x,
                     end.y - start.y
                 );
+                this.ctx.globalAlpha = 1;
             }
         }
     }
@@ -209,7 +373,15 @@ class CameraMotionCard extends HTMLElement {
                 [coords.y, coords.y2] = [coords.y2, coords.y];
             }
 
-            this.windows[this.currentWindow] = coords;
+            // Update the window data with new coordinates
+            if (!this.windows[this.currentWindow]) {
+                this.windows[this.currentWindow] = {
+                    coordinates: coords,
+                    is_on: true
+                };
+            } else {
+                this.windows[this.currentWindow].coordinates = coords;
+            }
 
             this._hass.callService("icamera", "set_window_coordinates", {
                 entity_id: this.config.entity,
@@ -225,18 +397,27 @@ class CameraMotionCard extends HTMLElement {
         this.currentWindow = num;
         const buttons = this.querySelectorAll(".window-buttons button");
         buttons.forEach((btn, index) => {
+            const windowData = this.windows[index + 1];
             if (index + 1 === num) {
-                btn.style.opacity = "1";
+                btn.style.opacity = windowData?.is_on ? "1" : "0.4";
                 btn.style.transform = "translateY(2px)";
                 btn.style.boxShadow = "none";
                 btn.style.borderColor = "rgba(0, 0, 0, 0.3)";
             } else {
-                btn.style.opacity = "0.7";
+                btn.style.opacity = windowData?.is_on ? "0.9" : "0.3";
                 btn.style.transform = "none";
                 btn.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.2)";
                 btn.style.borderColor = "transparent";
             }
         });
+
+        // Show settings panel and update values
+        this.settingsPanel.style.display = "block";
+        const windowData = this.windows[num] || {};
+        this.enableCheckbox.checked = windowData.is_on || false;
+        this.nameInput.value = windowData.name || `Window ${num}`;
+        this.sensitivitySlider.value = windowData.sensitivity || 0;
+        this.thresholdSlider.value = windowData.threshold || 0;
     }
 }
 
