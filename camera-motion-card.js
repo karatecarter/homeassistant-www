@@ -1,4 +1,20 @@
 class CameraMotionCard extends HTMLElement {
+    constructor() {
+        super();
+        this.windowColors = {
+            1: "#FF0000", // Red
+            2: "#00FF00", // Green
+            3: "#0000FF", // Blue
+            4: "#FFA500"  // Orange
+        };
+        this.windows = {
+            1: null,
+            2: null,
+            3: null,
+            4: null
+        };
+    }
+
     static getConfigElement() {
         return document.createElement("camera-motion-card-editor");
     }
@@ -55,14 +71,22 @@ class CameraMotionCard extends HTMLElement {
                 console.error(`Failed to load camera image for ${entityId}`);
                 this.img.alt = "Camera image failed to load";
             };
+
+            // Load window coordinates from state attributes if available
+            for (let i = 1; i <= 4; i++) {
+                if (state.attributes[`window_${i}_coordinates`]) {
+                    const coords = state.attributes[`window_${i}_coordinates`];
+                    this.windows[i] = coords;
+                }
+            }
         }
     }
 
     setupEventListeners() {
-        // Ensure canvas dimensions match image
         this.img.onload = () => {
             this.canvas.width = this.img.clientWidth;
             this.canvas.height = this.img.clientHeight;
+            this.drawAllWindows();
         };
 
         this.canvas.addEventListener("mousedown", (e) => this.startDrawing(e));
@@ -81,10 +105,35 @@ class CameraMotionCard extends HTMLElement {
             btn.innerText = `Window ${i}`;
             btn.style.padding = "8px";
             btn.style.cursor = "pointer";
+            btn.style.backgroundColor = this.windowColors[i];
+            btn.style.color = "white";
+            btn.style.border = "2px solid transparent"; // Add transparent border by default
+            btn.style.borderRadius = "4px";
+            btn.style.transition = "all 0.2s ease";
+            btn.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.2)";
+            btn.style.height = "36px"; // Fix the height
+            btn.style.lineHeight = "16px"; // Ensure text is vertically centered
             btn.onclick = () => this.selectWindow(i);
             buttons.appendChild(btn);
         }
         this.querySelector(".card-content").appendChild(buttons);
+    }
+
+    drawAllWindows() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        for (let i = 1; i <= 4; i++) {
+            if (this.windows[i]) {
+                const coords = this.windows[i];
+                this.ctx.strokeStyle = this.windowColors[i];
+                this.ctx.lineWidth = 2;
+                this.ctx.strokeRect(
+                    coords.x,
+                    coords.y,
+                    coords.x2 - coords.x,
+                    coords.y2 - coords.y
+                );
+            }
+        }
     }
 
     startDrawing(e) {
@@ -101,33 +150,39 @@ class CameraMotionCard extends HTMLElement {
         this.currentX = e.clientX - rect.left;
         this.currentY = e.clientY - rect.top;
 
-        // Update canvas dimensions
-        this.canvas.width = this.img.clientWidth;
-        this.canvas.height = this.img.clientHeight;
-
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.strokeStyle = "red";
-        this.ctx.lineWidth = 2;
+        this.drawAllWindows();  // Redraw all existing windows
 
-        const width = this.currentX - this.startX;
-        const height = this.currentY - this.startY;
-        this.ctx.strokeRect(this.startX, this.startY, width, height);
+        if (this.currentWindow > 0) {
+            this.ctx.strokeStyle = this.windowColors[this.currentWindow];
+            this.ctx.lineWidth = 2;
+            const width = this.currentX - this.startX;
+            const height = this.currentY - this.startY;
+            this.ctx.strokeRect(this.startX, this.startY, width, height);
+        }
     }
 
     stopDrawing() {
         if (!this.isDrawing) return;
-
         this.isDrawing = false;
 
         if (this._hass && this.currentWindow > 0) {
-            this._hass.callService("icamera", "set_window_coordinates", {
-                entity_id: this.config.entity,
-                window_num: this.currentWindow,
+            const coords = {
                 x: Math.round(this.startX),
                 y: Math.round(this.startY),
                 x2: Math.round(this.currentX),
                 y2: Math.round(this.currentY)
+            };
+
+            this.windows[this.currentWindow] = coords;
+
+            this._hass.callService("icamera", "set_window_coordinates", {
+                entity_id: this.config.entity,
+                window_num: this.currentWindow,
+                ...coords
             });
+
+            this.drawAllWindows();
         }
     }
 
@@ -136,11 +191,15 @@ class CameraMotionCard extends HTMLElement {
         const buttons = this.querySelectorAll(".window-buttons button");
         buttons.forEach((btn, index) => {
             if (index + 1 === num) {
-                btn.style.backgroundColor = "#4CAF50";
-                btn.style.color = "white";
+                btn.style.opacity = "1";
+                btn.style.transform = "translateY(2px)";
+                btn.style.boxShadow = "none";
+                btn.style.borderColor = "rgba(0, 0, 0, 0.3)";
             } else {
-                btn.style.backgroundColor = "";
-                btn.style.color = "";
+                btn.style.opacity = "0.7";
+                btn.style.transform = "none";
+                btn.style.boxShadow = "0 2px 4px rgba(0, 0, 0, 0.2)";
+                btn.style.borderColor = "transparent";
             }
         });
     }
