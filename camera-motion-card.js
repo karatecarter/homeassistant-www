@@ -1,3 +1,9 @@
+import {
+    LitElement,
+    html,
+    css,
+} from "https://unpkg.com/lit-element@2.4.0/lit-element.js?module";
+
 class CameraMotionCard extends HTMLElement {
     constructor() {
         super();
@@ -16,16 +22,19 @@ class CameraMotionCard extends HTMLElement {
     }
 
     static getConfigElement() {
-        return document.createElement("camera-motion-card-editor");
+        return document.createElement('camera-motion-card-editor');
     }
 
     static getStubConfig() {
-        return { entity: "" }
+        return {
+            type: "custom:camera-motion-card",
+            entity: ""
+        };
     }
 
     setConfig(config) {
         if (!config.entity) {
-            throw new Error("You need to define an entity");
+            throw new Error('Please define an entity');
         }
         this.config = config;
     }
@@ -462,3 +471,105 @@ class CameraMotionCard extends HTMLElement {
 
 customElements.define("camera-motion-card", CameraMotionCard);
 
+class CameraMotionCardEditor extends LitElement {
+    static get properties() {
+        return {
+            hass: { type: Object },
+            config: { type: Object }
+        };
+    }
+
+    static get styles() {
+        return css`
+            .form {
+                padding: 16px;
+            }
+            select {
+                width: 100%;
+                padding: 8px;
+                border-radius: 4px;
+                border: 1px solid var(--divider-color, #e0e0e0);
+                background: var(--card-background-color, white);
+                color: var(--primary-text-color);
+            }
+            .label {
+                display: block;
+                margin-bottom: 4px;
+                color: var(--primary-text-color);
+            }
+        `;
+    }
+
+    setConfig(config) {
+        this.config = config || { entity: "" };
+    }
+
+    getCameraEntities() {
+        if (!this.hass) return [];
+
+        return Object.keys(this.hass.states)
+            .filter(entityId => entityId.startsWith('camera.'))
+            .map(entityId => ({
+                entityId,
+                name: this.hass.states[entityId].attributes.friendly_name || entityId
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    render() {
+        if (!this.hass || !this.config) {
+            return html``;
+        }
+
+        const cameras = this.getCameraEntities();
+
+        return html`
+            <div class="form">
+                <label class="label">Camera Entity</label>
+                <select
+                    .value=${this.config.entity}
+                    @change=${this._valueChanged}
+                >
+                    <option value="" disabled selected=${!this.config.entity}>Select a camera</option>
+                    ${cameras.map(camera => html`
+                        <option
+                            value=${camera.entityId}
+                            ?selected=${this.config.entity === camera.entityId}
+                        >
+                            ${camera.name}
+                        </option>
+                    `)}
+                </select>
+            </div>
+        `;
+    }
+
+    _valueChanged(ev) {
+        if (!this.config || !this.hass) return;
+
+        const value = ev.target.value;
+        if (this.config.entity === value) return;
+
+        const newConfig = {
+            ...this.config,
+            entity: value
+        };
+
+        const event = new CustomEvent("config-changed", {
+            detail: { config: newConfig },
+            bubbles: true,
+            composed: true
+        });
+        this.dispatchEvent(event);
+    }
+}
+
+customElements.define("camera-motion-card-editor", CameraMotionCardEditor);
+
+window.customCards = window.customCards || [];
+window.customCards.push({
+    type: 'camera-motion-card',
+    name: 'Camera Motion Card',
+    preview: false,
+    description: 'A card for configuring camera motion detection windows'
+});
