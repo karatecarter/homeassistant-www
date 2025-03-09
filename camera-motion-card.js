@@ -3,7 +3,7 @@ class CameraMotionCard extends HTMLElement {
         super();
         this.windowColors = {
             1: "#FF0000", // Red
-            2: "#00FF00", // Green
+            2: "#2E7D32", // Green
             3: "#0000FF", // Blue
             4: "#FFA500"  // Orange
         };
@@ -31,9 +31,15 @@ class CameraMotionCard extends HTMLElement {
     }
 
     set hass(hass) {
-        if (!this.content) {
+        if (!this.innerHTML) {
             this.innerHTML = `
                 <ha-card>
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div class="name"></div>
+                        <ha-icon-button>
+                            <ha-icon icon="mdi:refresh"></ha-icon>
+                        </ha-icon-button>
+                    </div>
                     <div class="card-content">
                         <div id="camera-container" style="position: relative;">
                             <img id="camera-image" style="width: 100%;">
@@ -46,14 +52,65 @@ class CameraMotionCard extends HTMLElement {
             this.img = this.querySelector("#camera-image");
             this.canvas = this.querySelector("#motion-overlay");
             this.ctx = this.canvas.getContext("2d");
+            this.refreshButton = this.querySelector("ha-icon-button");
 
             this.isDrawing = false;
             this.currentWindow = 0;
 
+            // Setup refresh button click handler
+            this.refreshButton.addEventListener("click", () => {
+                this.loadCameraImage(this._hass);
+            });
+
             this.setupEventListeners();
         }
 
-        this._hass = hass;
+        // Only update hass reference and load image if it's the first time
+        if (!this._hass) {
+            this._hass = hass;
+
+        } else {
+            this._hass = hass;
+        }
+        this.loadCameraImage(hass);
+        // Update window data from state attributes
+        const entityId = this.config.entity;
+        const state = hass.states[entityId];
+        if (state) {
+            // Update name in header
+            const nameDiv = this.querySelector(".name");
+            if (nameDiv) {
+                nameDiv.textContent = state.attributes.friendly_name || entityId;
+            }
+
+            // Load window data from state attributes
+            for (let i = 1; i <= 4; i++) {
+                const windowData = state.attributes[`window_${i}`];
+                if (windowData) {
+                    this.windows[i] = windowData;
+                }
+            }
+
+            // Update button labels and styles if they exist
+            const buttons = this.querySelectorAll(".window-buttons button");
+            buttons.forEach((btn, index) => {
+                const windowNum = index + 1;
+                const windowData = this.windows[windowNum];
+                if (windowData) {
+                    btn.innerText = windowData.name || `Window ${windowNum}`;
+                    if (windowData.is_on) {
+                        btn.style.opacity = "1";
+                    } else {
+                        btn.style.opacity = "0.3";
+                    }
+                }
+            });
+
+            this.drawAllWindows();
+        }
+    }
+
+    loadCameraImage(hass) {
         const entityId = this.config.entity;
         const state = hass.states[entityId];
 
@@ -71,32 +128,6 @@ class CameraMotionCard extends HTMLElement {
                 console.error(`Failed to load camera image for ${entityId}`);
                 this.img.alt = "Camera image failed to load";
             };
-
-            // Load window data from state attributes
-            for (let i = 1; i <= 4; i++) {
-                const windowData = state.attributes[`window_${i}`];
-                if (windowData) {
-                    this.windows[i] = windowData;
-                }
-            }
-
-            // Update button labels and styles if they exist
-            const buttons = this.querySelectorAll(".window-buttons button");
-            buttons.forEach((btn, index) => {
-                const windowNum = index + 1;
-                const windowData = this.windows[windowNum];
-                if (windowData) {
-                    btn.innerText = windowData.name || `Window ${windowNum}`;
-                    // Update button style based on window state
-                    if (windowData.is_on) {
-                        btn.style.opacity = "1";
-                    } else {
-                        btn.style.opacity = "0.3";
-                    }
-                }
-            });
-
-            this.drawAllWindows();
         }
     }
 
@@ -172,7 +203,7 @@ class CameraMotionCard extends HTMLElement {
 
         const sensitivitySlider = document.createElement("ha-slider");
         sensitivitySlider.min = 0;
-        sensitivitySlider.max = 100;
+        sensitivitySlider.max = 10;
         sensitivitySlider.pin = true;
         sensitivitySlider.style.marginBottom = "8px";
 
@@ -230,10 +261,14 @@ class CameraMotionCard extends HTMLElement {
             }
         });
 
+        sensitivitySlider.addEventListener("input", (e) => {
+            const value = parseInt(e.target.value);
+            sensitivityLabel.textContent = `Sensitivity: ${value}`;
+        });
+
         sensitivitySlider.addEventListener("change", (e) => {
             if (this.currentWindow && this._hass) {
                 const value = parseInt(e.target.value);
-                sensitivityLabel.textContent = `Sensitivity: ${value}`;
                 this._hass.callService("icamera", "set_window_sensitivity", {
                     entity_id: this.config.entity,
                     window_num: this.currentWindow,
@@ -277,7 +312,9 @@ class CameraMotionCard extends HTMLElement {
         this.enableCheckbox = enableCheckbox;
         this.nameInput = nameInput;
         this.sensitivitySlider = sensitivitySlider;
+        this.sensitivityLabel = sensitivityLabel;
         this.thresholdSlider = thresholdSlider;
+        this.thresholdLabel = thresholdLabel;
     }
 
     translateToDisplayCoords(x, y) {
@@ -417,7 +454,9 @@ class CameraMotionCard extends HTMLElement {
         this.enableCheckbox.checked = windowData.is_on || false;
         this.nameInput.value = windowData.name || `Window ${num}`;
         this.sensitivitySlider.value = windowData.sensitivity || 0;
+        this.sensitivityLabel.textContent = `Sensitivity: ${windowData.sensitivity || 0}`;
         this.thresholdSlider.value = windowData.threshold || 0;
+        this.thresholdLabel.textContent = `Threshold: ${windowData.threshold || 0}`;
     }
 }
 
